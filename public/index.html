@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Private Stream</title>
+    <!-- Tailwind CSS for modern, responsive styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Phosphor Icons for premium UI icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    
+    <style>
+        /* Custom scrollbar for a sleek look */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
+        
+        /* Custom styling for the audio progress bar */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 12px;
+            width: 12px;
+            border-radius: 50%;
+            background: #10b981;
+            cursor: pointer;
+            margin-top: -4px;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #4b5563;
+            border-radius: 2px;
+        }
+        
+        /* Equalizer animation for the currently playing song */
+        .playing-anim span {
+            display: inline-block;
+            width: 3px;
+            height: 10px;
+            background-color: #10b981;
+            margin: 0 1px;
+            border-radius: 2px;
+            animation: bounce 1s infinite ease-in-out;
+        }
+        .playing-anim span:nth-child(1) { animation-delay: 0s; }
+        .playing-anim span:nth-child(2) { animation-delay: 0.2s; }
+        .playing-anim span:nth-child(3) { animation-delay: 0.4s; }
+        
+        @keyframes bounce {
+            0%, 100% { transform: scaleY(0.5); }
+            50% { transform: scaleY(1.2); }
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-gray-900 via-gray-800 to-black text-white font-sans h-screen flex flex-col overflow-hidden selection:bg-emerald-500 selection:text-white">
+    
+    <!-- Hidden native audio element; we will control it via JS -->
+    <audio id="native-audio" preload="metadata"></audio>
+
+    <!-- Header -->
+    <header class="p-6 pb-2 shrink-0">
+        <h1 class="text-3xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-400">
+            My Library
+        </h1>
+        <p class="text-gray-400 text-sm mt-1" id="song-count">Loading tracks...</p>
+    </header>
+
+    <!-- Scrollable Playlist Area -->
+    <main class="flex-1 overflow-y-auto px-4 pb-32" id="playlist-container">
+        <div id="song-list" class="flex flex-col space-y-2 mt-4">
+            <!-- Song items will be injected here by JavaScript -->
+        </div>
+    </main>
+
+    <!-- Floating Bottom Player -->
+    <div class="fixed bottom-0 left-0 w-full backdrop-blur-xl bg-gray-900/80 border-t border-gray-700/50 p-4 pb-6 sm:pb-4 shadow-2xl transition-transform transform translate-y-0" id="player-ui">
+        <div class="max-w-3xl mx-auto flex flex-col sm:flex-row items-center gap-4">
+            
+            <!-- Now Playing Info -->
+            <div class="flex items-center gap-4 w-full sm:w-1/3">
+                <div class="w-12 h-12 rounded-lg bg-gradient-to-br from-emerald-500 to-cyan-600 flex items-center justify-center shadow-lg shrink-0">
+                    <i class="ph ph-music-notes text-2xl text-white"></i>
+                </div>
+                <div class="overflow-hidden w-full">
+                    <h3 id="current-title" class="font-bold text-gray-100 truncate w-full">Not Playing</h3>
+                    <p class="text-xs text-gray-400">Telegram Stream</p>
+                </div>
+            </div>
+
+            <!-- Controls & Progress -->
+            <div class="flex flex-col items-center w-full sm:w-1/3 gap-2">
+                <!-- Playback Buttons -->
+                <div class="flex items-center gap-6">
+                    <button id="prev-btn" class="text-gray-400 hover:text-white transition" onclick="playPrev()">
+                        <i class="ph-fill ph-skip-back text-2xl"></i>
+                    </button>
+                    <button id="play-pause-btn" class="w-12 h-12 flex items-center justify-center bg-emerald-500 hover:bg-emerald-400 text-black rounded-full transition shadow-lg shadow-emerald-500/30" onclick="togglePlay()">
+                        <i class="ph-fill ph-play text-2xl" id="play-icon"></i>
+                    </button>
+                    <button id="next-btn" class="text-gray-400 hover:text-white transition" onclick="playNext()">
+                        <i class="ph-fill ph-skip-forward text-2xl"></i>
+                    </button>
+                </div>
+                
+                <!-- Progress Bar -->
+                <div class="flex items-center w-full gap-2 text-xs text-gray-400 font-mono">
+                    <span id="time-current">0:00</span>
+                    <input type="range" id="seek-bar" value="0" step="0.1" class="w-full">
+                    <span id="time-total">0:00</span>
+                </div>
+            </div>
+            
+            <!-- Volume / Extras (Hidden on small mobile) -->
+            <div class="hidden sm:flex w-1/3 justify-end items-center gap-3">
+                <i class="ph ph-speaker-high text-gray-400"></i>
+                <input type="range" id="volume-bar" min="0" max="1" step="0.01" value="1" class="w-24">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State variables
+        let songQueue = [];
+        let currentIndex = -1;
+        let isPlaying = false;
+
+        // DOM Elements
+        const audio = document.getElementById('native-audio');
+        const playIcon = document.getElementById('play-icon');
+        const playPauseBtn = document.getElementById('play-pause-btn');
+        const currentTitle = document.getElementById('current-title');
+        const listContainer = document.getElementById('song-list');
+        const songCount = document.getElementById('song-count');
+        const seekBar = document.getElementById('seek-bar');
+        const timeCurrent = document.getElementById('time-current');
+        const timeTotal = document.getElementById('time-total');
+        const volumeBar = document.getElementById('volume-bar');
+
+        async function loadSongs() {
+            try {
+                // Try fetching from your Termux Node.js backend
+                const response = await fetch('/api/songs');
+                if (!response.ok) throw new Error("Network response was not ok");
+                songQueue = await response.json();
+            } catch (error) {
+                console.log("Backend not detected. Loading mock data for preview purposes.");
+                // Mock data in case it's viewed in the isolated previewer
+                songQueue = [
+                    { title: "Connect to Termux Backend to see your songs", fileId: "none" }
+                ];
+            }
+            
+            songCount.innerText = `${songQueue.length} Tracks`;
+
+            if (songQueue.length === 0) {
+                listContainer.innerHTML = '<div class="text-center text-gray-500 mt-10">No songs yet. Forward some MP3s to your Telegram bot!</div>';
+                return;
+            }
+
+            renderPlaylist();
+        }
+
+        function renderPlaylist() {
+            listContainer.innerHTML = '';
+            songQueue.forEach((song, index) => {
+                const isCurrent = currentIndex === index;
+                
+                const btn = document.createElement('button');
+                btn.className = `w-full flex items-center justify-between p-4 rounded-xl transition duration-200 group ${isCurrent ? 'bg-gray-800 border border-gray-700' : 'hover:bg-gray-800/50 border border-transparent'}`;
+                btn.onclick = () => playSong(index);
+                
+                // Track number & Title
+                const leftSide = document.createElement('div');
+                leftSide.className = 'flex items-center gap-4 overflow-hidden';
+                
+                const trackNum = document.createElement('span');
+                trackNum.className = `font-mono text-sm ${isCurrent ? 'text-emerald-500' : 'text-gray-500 group-hover:text-gray-400'}`;
+                
+                // Show equalizer animation if playing, else show number
+                if (isCurrent && isPlaying) {
+                    trackNum.innerHTML = '<div class="playing-anim"><span></span><span></span><span></span></div>';
+                } else {
+                    trackNum.innerText = (index + 1).toString().padStart(2, '0');
+                }
+                
+                const title = document.createElement('span');
+                title.className = `font-medium truncate text-left ${isCurrent ? 'text-white' : 'text-gray-300 group-hover:text-white'}`;
+                title.innerText = song.title;
+                
+                leftSide.appendChild(trackNum);
+                leftSide.appendChild(title);
+                
+                // Play Icon (shows on hover)
+                const rightSide = document.createElement('div');
+                rightSide.className = `text-emerald-500 ${isCurrent ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition`;
+                rightSide.innerHTML = '<i class="ph-fill ph-play-circle text-2xl"></i>';
+                
+                btn.appendChild(leftSide);
+                btn.appendChild(rightSide);
+                listContainer.appendChild(btn);
+            });
+        }
+
+        function playSong(index) {
+            if (index < 0 || index >= songQueue.length) return;
+            
+            // If clicking the currently playing song, just toggle play/pause
+            if (currentIndex === index) {
+                togglePlay();
+                return;
+            }
+            
+            currentIndex = index;
+            const song = songQueue[currentIndex];
+            
+            // Prevent attempting to play the mock data in preview mode
+            if(song.fileId === "none") return; 
+
+            audio.src = `/stream/${song.fileId}`;
+            audio.play();
+            isPlaying = true;
+            
+            currentTitle.innerText = song.title;
+            updatePlayIcon();
+            renderPlaylist(); // Re-render to update highlights/animations
+        }
+
+        function togglePlay() {
+            if (currentIndex === -1 && songQueue.length > 0) {
+                playSong(0);
+                return;
+            }
+            if (audio.paused) {
+                audio.play();
+                isPlaying = true;
+            } else {
+                audio.pause();
+                isPlaying = false;
+            }
+            updatePlayIcon();
+            renderPlaylist(); // Re-render to start/stop the equalizer animation
+        }
+
+        function playNext() {
+            if (songQueue.length === 0) return;
+            let nextIndex = currentIndex + 1;
+            if (nextIndex >= songQueue.length) nextIndex = 0;
+            playSong(nextIndex);
+        }
+
+        function playPrev() {
+            if (songQueue.length === 0) return;
+            // If more than 3 seconds in, restart current track
+            if (audio.currentTime > 3) {
+                audio.currentTime = 0;
+                return;
+            }
+            let prevIndex = currentIndex - 1;
+            if (prevIndex < 0) prevIndex = songQueue.length - 1;
+            playSong(prevIndex);
+        }
+
+        function updatePlayIcon() {
+            if (isPlaying) {
+                playIcon.classList.remove('ph-play');
+                playIcon.classList.add('ph-pause');
+            } else {
+                playIcon.classList.remove('ph-pause');
+                playIcon.classList.add('ph-play');
+            }
+        }
+
+        // Format time in MM:SS
+        function formatTime(seconds) {
+            if (isNaN(seconds)) return "0:00";
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        audio.addEventListener('timeupdate', () => {
+            if (audio.duration) {
+                seekBar.max = audio.duration;
+                seekBar.value = audio.currentTime;
+                timeCurrent.innerText = formatTime(audio.currentTime);
+                timeTotal.innerText = formatTime(audio.duration);
+            }
+        });
+
+        audio.addEventListener('loadedmetadata', () => {
+            seekBar.max = audio.duration;
+            timeTotal.innerText = formatTime(audio.duration);
+        });
+
+        audio.addEventListener('ended', playNext);
+
+        seekBar.addEventListener('input', () => {
+            audio.currentTime = seekBar.value;
+        });
+
+        volumeBar.addEventListener('input', () => {
+            audio.volume = volumeBar.value;
+        });
+
+        // Initialize application
+        loadSongs();
+        
+        // Refresh list silently every 10 seconds to check for new songs
+        setInterval(async () => {
+            try {
+                const response = await fetch('/api/songs');
+                if (response.ok) {
+                    const newQueue = await response.json();
+                    if (newQueue.length !== songQueue.length) {
+                        songQueue = newQueue;
+                        songCount.innerText = `${songQueue.length} Tracks`;
+                        renderPlaylist();
+                    }
+                }
+            } catch (e) {}
+        }, 10000);
+    </script>
+</body>
+</html>
