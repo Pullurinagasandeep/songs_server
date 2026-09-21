@@ -46,6 +46,46 @@
         }
         .tab:hover { border-color: var(--primary); }
         .tab.active { color: #000; background: var(--green); border-color: var(--green); }
+        .library-search {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 18px;
+            padding: 0 12px;
+            background: var(--card);
+            border: 1px solid transparent;
+            border-radius: 999px;
+        }
+        .library-search:focus-within { border-color: var(--secondary); }
+        .library-search-icon { flex: 0 0 auto; color: var(--secondary); }
+        .library-search-icon svg { width: 18px; height: 18px; }
+        .library-search input {
+            min-width: 0;
+            flex: 1;
+            padding: 11px 0;
+            color: var(--primary);
+            background: transparent;
+            border: 0;
+            outline: none;
+        }
+        .library-search input::placeholder { color: var(--secondary); }
+        .clear-search {
+            display: none;
+            padding: 4px 8px;
+            color: var(--secondary);
+            background: transparent;
+            border-radius: 999px;
+            font-size: 12px;
+        }
+        .clear-search:hover { color: var(--primary); background: #3a3a3a; }
+        .clear-search.visible { display: block; }
+        .load-more-status {
+            min-height: 24px;
+            padding: 12px 0 4px;
+            color: var(--secondary);
+            font-size: 12px;
+            text-align: center;
+        }
         .song-list { display: flex; flex-direction: column; gap: 4px; }
         .song-item {
             display: flex;
@@ -175,6 +215,13 @@
             <button class="tab" data-tab="playlists" onclick="switchTab('playlists')">My Playlists</button>
         </nav>
 
+        <form class="library-search" role="search" onsubmit="return false;">
+            <span class="library-search-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="m21 19.6-5.1-5.1a7 7 0 1 0-1.4 1.4l5.1 5.1 1.4-1.4ZM5 10a5 5 0 1 1 10 0A5 5 0 0 1 5 10Z"/></svg>
+            </span>
+            <input id="song-search" type="search" placeholder="Search your music" aria-label="Search songs">
+            <button id="clear-search" class="clear-search" type="button" aria-label="Clear search">Clear</button>
+        </form>
         <section id="library-view" aria-label="Library"></section>
         <section id="playlists-view" aria-label="Playlists" hidden>
             <form class="create-playlist" onsubmit="createPlaylist(); return false;">
@@ -213,6 +260,7 @@
 
     <script>
         let allSongs = [];
+        let libraryVisibleCount = 25;
         let playlists = JSON.parse(localStorage.getItem('streamvault_playlists')) || {};
         let currentQueue = [];
         let currentQueueIndex = -1;
@@ -310,7 +358,7 @@
             audioPlayer.src = `/stream/${encodeURIComponent(song.fileId)}`;
             audioPlayer.play().catch(() => {});
         }
-        function playLibrarySong(index) { currentQueue = allSongs; playQueueSong(index); }
+        function playLibrarySong(index, songs = allSongs) { currentQueue = songs; playQueueSong(index); }
         function playPlaylistSong(playlistName, index) { currentQueue = playlists[playlistName]; playQueueSong(index); }
         function togglePlay() {
             if (!audioPlayer.src) return;
@@ -375,8 +423,14 @@
             container.innerHTML = '';
             const list = document.createElement('div');
             list.className = 'song-list';
+            const query = document.getElementById('song-search').value.trim().toLocaleLowerCase();
+            const visibleSongs = query
+                ? allSongs.filter(song => song.title.toLocaleLowerCase().includes(query))
+                : allSongs;
+            const songsToRender = visibleSongs.slice(0, libraryVisibleCount);
             if (!allSongs.length) list.innerHTML = '<p class="empty-state">Your library is empty.</p>';
-            allSongs.forEach((song, index) => {
+            else if (!visibleSongs.length) list.innerHTML = '<p class="empty-state">No songs match your search.</p>';
+            songsToRender.forEach(song => {
                 const fileId = encodeURIComponent(song.fileId);
                 const actions = `<div class="song-actions">
                     <button class="icon-action" type="button" aria-label="Add ${song.title} to a playlist" onclick="togglePlaylistMenu(this, '${fileId}')">＋</button>
@@ -384,9 +438,18 @@
                         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4h2v9.2l3.2-3.2 1.4 1.4-5.6 5.6-5.6-5.6 1.4-1.4 3.2 3.2V4ZM5 18h14v2H5v-2Z"/></svg>
                     </button>
                 </div>`;
-                list.appendChild(songMarkup(song, () => playLibrarySong(index), actions));
+                const songIndex = visibleSongs.indexOf(song);
+                list.appendChild(songMarkup(song, () => playLibrarySong(songIndex, visibleSongs), actions));
             });
             container.appendChild(list);
+            if (songsToRender.length < visibleSongs.length) {
+                const loadMoreStatus = document.createElement('div');
+                loadMoreStatus.className = 'load-more-status';
+                loadMoreStatus.textContent = 'Scroll to load more';
+                loadMoreStatus.dataset.loadMore = 'true';
+                container.appendChild(loadMoreStatus);
+                loadMoreObserver.observe(loadMoreStatus);
+            }
         }
         function renderPlaylists() {
             const container = document.getElementById('playlist-container');
@@ -429,9 +492,28 @@
         function savePlaylists() { localStorage.setItem('streamvault_playlists', JSON.stringify(playlists)); }
         function switchTab(tab) {
             document.getElementById('library-view').hidden = tab !== 'library';
+            document.querySelector('.library-search').hidden = tab !== 'library';
             document.getElementById('playlists-view').hidden = tab !== 'playlists';
             document.querySelectorAll('.tab').forEach(button => button.classList.toggle('active', button.dataset.tab === tab));
         }
+        const songSearch = document.getElementById('song-search');
+        const clearSearch = document.getElementById('clear-search');
+        const loadMoreObserver = new IntersectionObserver(entries => {
+            if (!entries.some(entry => entry.isIntersecting)) return;
+            libraryVisibleCount += 25;
+            renderLibrary();
+        }, { rootMargin: '200px' });
+        songSearch.addEventListener('input', () => {
+            libraryVisibleCount = 25;
+            clearSearch.classList.toggle('visible', songSearch.value.length > 0);
+            renderLibrary();
+        });
+        clearSearch.addEventListener('click', () => {
+            songSearch.value = '';
+            clearSearch.classList.remove('visible');
+            songSearch.focus();
+            renderLibrary();
+        });
         fetchSongs();
     </script>
 </body>
