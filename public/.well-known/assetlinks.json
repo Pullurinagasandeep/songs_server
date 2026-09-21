@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "org.duckdns.sussysandy_music.twa",
+        "sha256_cert_fingerprints": ["D4:2C:A5:B5:B3:61:53:C1:BE:BD:F0:50:A1:58:7B:71:DF:E9:96:65:AD:A7:A0:52:4B:44:2D:01:15:6C:2D:51"]
+      }
+    }]
