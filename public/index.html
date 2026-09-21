@@ -85,6 +85,14 @@
             font-size: 12px;
         }
         .song-action:hover { color: var(--primary); }
+        .song-actions { display: flex; align-items: center; gap: 2px; }
+        .icon-action { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; color: var(--secondary); background: transparent; border-radius: 50%; }
+        .icon-action:hover { color: var(--primary); background: #3a3a3a; }
+        .playlist-menu { position: absolute; z-index: 2; right: 0; top: 36px; min-width: 180px; padding: 6px; background: #333; border-radius: 4px; box-shadow: 0 8px 24px #0008; }
+        .playlist-menu button { display: block; width: 100%; padding: 9px 10px; color: var(--primary); background: transparent; border-radius: 3px; text-align: left; font-size: 12px; }
+        .playlist-menu button:hover { background: #4a4a4a; }
+        .playlist-menu-empty { padding: 8px 10px; color: var(--secondary); font-size: 12px; }
+        .song-actions { position: relative; }
         .remove-action { color: #d45c5c; }
         .playlist-header {
             margin: 27px 0 8px;
@@ -284,6 +292,38 @@
             main.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onPlay(); } };
             return item;
         }
+        function downloadSong(fileId) {
+            const link = document.createElement('a');
+            link.href = `/stream/${encodeURIComponent(fileId)}?download=1`;
+            link.download = 'sandstream.mp3';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        }
+        function togglePlaylistMenu(button, fileId) {
+            document.querySelectorAll('.playlist-menu').forEach(menu => menu.remove());
+            const menu = document.createElement('div');
+            menu.className = 'playlist-menu';
+            const names = Object.keys(playlists);
+            if (!names.length) {
+                menu.innerHTML = '<div class="playlist-menu-empty">Create a playlist first.</div>';
+            } else {
+                names.forEach(name => {
+                    const option = document.createElement('button');
+                    option.type = 'button';
+                    option.textContent = name;
+                    option.onclick = () => {
+                        addToPlaylist(fileId, name);
+                        menu.remove();
+                    };
+                    menu.appendChild(option);
+                });
+            }
+            button.parentElement.appendChild(menu);
+        }
+        document.addEventListener('click', event => {
+            if (!event.target.closest('.song-actions')) document.querySelectorAll('.playlist-menu').forEach(menu => menu.remove());
+        });
         function renderLibrary() {
             const container = document.getElementById('library-view');
             container.innerHTML = '';
@@ -291,9 +331,14 @@
             list.className = 'song-list';
             if (!allSongs.length) list.innerHTML = '<p class="empty-state">Your library is empty.</p>';
             allSongs.forEach((song, index) => {
-                let options = '<option value="">Add to playlist</option>';
-                Object.keys(playlists).forEach(name => { options += `<option value="${encodeURIComponent(name)}">${name}</option>`; });
-                list.appendChild(songMarkup(song, () => playLibrarySong(index), `<select class="song-action" aria-label="Add ${song.title} to playlist" onchange="addToPlaylist('${encodeURIComponent(song.fileId)}', decodeURIComponent(this.value)); this.value=''">${options}</select>`));
+                const fileId = encodeURIComponent(song.fileId);
+                const actions = `<div class="song-actions">
+                    <button class="icon-action" type="button" aria-label="Add ${song.title} to a playlist" onclick="togglePlaylistMenu(this, '${fileId}')">＋</button>
+                    <button class="icon-action" type="button" aria-label="Download ${song.title}" onclick="downloadSong('${fileId}')">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4h2v9.2l3.2-3.2 1.4 1.4-5.6 5.6-5.6-5.6 1.4-1.4 3.2 3.2V4ZM5 18h14v2H5v-2Z"/></svg>
+                    </button>
+                </div>`;
+                list.appendChild(songMarkup(song, () => playLibrarySong(index), actions));
             });
             container.appendChild(list);
         }
@@ -306,7 +351,12 @@
                 heading.className = 'playlist-header';
                 heading.textContent = name;
                 wrapper.appendChild(heading);
-                playlists[name].forEach((song, index) => wrapper.appendChild(songMarkup(song, () => playPlaylistSong(name, index), `<button class="remove-action" onclick="removeFromPlaylist('${encodeURIComponent(song.fileId)}', '${encodeURIComponent(name)}')">Remove</button>`)));
+                playlists[name].forEach((song, index) => wrapper.appendChild(songMarkup(song, () => playPlaylistSong(name, index), `<div class="song-actions">
+                    <button class="icon-action" type="button" aria-label="Download ${song.title}" onclick="downloadSong('${encodeURIComponent(song.fileId)}')">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4h2v9.2l3.2-3.2 1.4 1.4-5.6 5.6-5.6-5.6 1.4-1.4 3.2 3.2V4ZM5 18h14v2H5v-2Z"/></svg>
+                    </button>
+                    <button class="remove-action" onclick="removeFromPlaylist('${encodeURIComponent(song.fileId)}', '${encodeURIComponent(name)}')">Remove</button>
+                </div>`)));
                 if (!playlists[name].length) wrapper.insertAdjacentHTML('beforeend', '<p class="empty-state">No songs added yet.</p>');
                 container.appendChild(wrapper);
             });

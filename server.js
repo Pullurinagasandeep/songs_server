@@ -58,6 +58,13 @@ app.get('/stream/:fileId', async (req, res) => {
         
         const filePath = fileData.data.result.file_path;
         const downloadUrl = `https://api.telegram.org/file/bot${token}/${filePath}`;
+        if (req.query.download === '1') {
+            const song = await Song.findOne({ fileId });
+            const filename = (song?.title || 'sandstream-audio')
+                .replace(/[\\/:*?"<>|\u0000-\u001F\u007F]/g, '')
+                .trim() || 'sandstream-audio';
+            res.setHeader('Content-Disposition', `attachment; filename="${filename}.mp3"`);
+        }
         
         // Forward the browser's Range request to Telegram
         const options = { method: 'get', url: downloadUrl, responseType: 'stream', headers: {} };
