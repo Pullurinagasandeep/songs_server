@@ -228,19 +228,64 @@
             if (!Number.isFinite(seconds)) return '0:00';
             return `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
         };
+        const mediaSession = 'mediaSession' in navigator ? navigator.mediaSession : null;
+        function updateMediaPosition() {
+            if (!mediaSession || !Number.isFinite(audioPlayer.duration) || audioPlayer.duration <= 0) return;
+            try {
+                mediaSession.setPositionState({
+                    duration: audioPlayer.duration,
+                    playbackRate: audioPlayer.playbackRate || 1,
+                    position: Math.min(audioPlayer.currentTime, audioPlayer.duration)
+                });
+            } catch (error) {
+                // Some browsers expose Media Session before position state is supported.
+            }
+        }
+        function updateMediaMetadata(song) {
+            if (!mediaSession || !song || !('MediaMetadata' in window)) return;
+            mediaSession.metadata = new MediaMetadata({
+                title: song.title,
+                artist: 'Sandstream',
+                album: 'Sandstream Audio',
+                artwork: [{ src: '/favicon.svg', sizes: '64x64', type: 'image/svg+xml' }]
+            });
+        }
+        function registerMediaAction(action, handler) {
+            if (!mediaSession) return;
+            try {
+                mediaSession.setActionHandler(action, handler);
+            } catch (error) {
+                if (error.name !== 'NotSupportedError') throw error;
+            }
+        }
         function updatePlayButton() {
             playPauseBtn.innerHTML = audioPlayer.paused ? icon.play : icon.pause;
             playPauseBtn.setAttribute('aria-label', audioPlayer.paused ? 'Play' : 'Pause');
+            if (mediaSession) mediaSession.playbackState = audioPlayer.paused ? 'paused' : 'playing';
+        }
+        if (mediaSession) {
+            registerMediaAction('play', togglePlay);
+            registerMediaAction('pause', togglePlay);
+            registerMediaAction('nexttrack', playNext);
+            registerMediaAction('previoustrack', playPrevious);
+            registerMediaAction('seekbackward', details => {
+                audioPlayer.currentTime = Math.max(0, audioPlayer.currentTime - (details.seekOffset || 10));
+            });
+            registerMediaAction('seekforward', details => {
+                audioPlayer.currentTime = Math.min(audioPlayer.duration || Infinity, audioPlayer.currentTime + (details.seekOffset || 10));
+            });
         }
         audioPlayer.addEventListener('play', updatePlayButton);
         audioPlayer.addEventListener('pause', updatePlayButton);
         audioPlayer.addEventListener('loadedmetadata', () => {
             progress.max = audioPlayer.duration || 100;
             document.getElementById('total-time').textContent = formatTime(audioPlayer.duration);
+            updateMediaPosition();
         });
         audioPlayer.addEventListener('timeupdate', () => {
             progress.value = audioPlayer.currentTime;
             document.getElementById('current-time').textContent = formatTime(audioPlayer.currentTime);
+            updateMediaPosition();
         });
         audioPlayer.addEventListener('ended', playNext);
         progress.addEventListener('input', () => { audioPlayer.currentTime = Number(progress.value); });
@@ -261,6 +306,7 @@
             currentQueueIndex = index;
             const song = currentQueue[index];
             document.getElementById('now-playing').textContent = song.title;
+            updateMediaMetadata(song);
             audioPlayer.src = `/stream/${encodeURIComponent(song.fileId)}`;
             audioPlayer.play().catch(() => {});
         }

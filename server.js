@@ -3,7 +3,7 @@ const axios = require('axios');
 const mongoose = require('mongoose');
 
 const app = express();
-const token = '8744829387:AAG52cKmPf772VySZBV4wdmHVNGcYu2DnfA';
+const token = '8744829387:AAG9bu9jiFtjF4W51pqq88NSk6cxS4C5K7w';
 const API_URL = `https://api.telegram.org/bot${token}`;
 
 const mongoURI = 'mongodb+srv://atheist582_db_user:yTUZ77T57cYtGVxN@cluster0.d6wrs8q.mongodb.net/music-app?retryWrites=true&w=majority&appName=Cluster0';
